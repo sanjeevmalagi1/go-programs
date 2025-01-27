@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func isFileExists(filepath string) (bool, error) {
@@ -20,20 +22,12 @@ func isFileExists(filepath string) (bool, error) {
 	return true, nil
 }
 
-func uploadFile(c *gin.Context) {
-	fmt.Println(c)
-
-	c.IndentedJSON(http.StatusOK, []byte(""))
-}
-
 func downloadFile(c *gin.Context) {
-	fmt.Println(c.Params)
 	ps := c.Params
 
 	filename, found := ps.Get("file_name")
 
 	if found == false {
-		fmt.Println("file_name not found")
 		c.IndentedJSON(http.StatusNoContent, []byte(""))
 		return
 	}
@@ -46,7 +40,6 @@ func downloadFile(c *gin.Context) {
 	}
 
 	if fileExists {
-		fmt.Println(filepath)
 		c.FileAttachment(filepath, filename)
 		return
 	}
@@ -54,9 +47,36 @@ func downloadFile(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, []byte(""))
 }
 
+func uploadFile(c *gin.Context) {
+	file, _ := c.FormFile("file")
+
+	file_name := uuid.Must(uuid.NewRandom()).String()
+
+	if err := c.SaveUploadedFile(file, file_name); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "File uploaded successfully",
+		"file_name": file_name,
+		"file_size": file.Size,
+	})
+}
+
+func requestLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		fmt.Printf("%s\t %s\t %d\n", c.Request.Method, c.FullPath(), time.Unix)
+
+	}
+}
+
 func main() {
 
 	router := gin.Default()
+
+	router.Use(requestLogger())
 
 	router.GET("api/v1/download/:file_name", downloadFile)
 	router.POST("api/v1/upload", uploadFile)
