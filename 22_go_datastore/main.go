@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -12,75 +13,73 @@ import (
 // }
 
 type DataStore struct {
-	data []KeyValuePair
+	data map[string]Data
 }
 
-type KeyValuePair struct {
-	key   string
+type Data struct {
 	value string
 	ttl   time.Duration
 }
 
 func (s *DataStore) Get(key string) (string, error) {
+	data, exists := s.data[key]
 
-	var kv *KeyValuePair
-	for _, KV := range s.data {
-		if KV.key == key {
-			kv = &KV
-		}
-	}
-
-	if kv == nil {
+	if !exists {
 		return "", fmt.Errorf("not found")
 	}
 
-	return kv.value, nil
+	return data.value, nil
 }
 
-func (s *DataStore) Set(key string, val string, ttl time.Duration) (bool, error) {
+func (s *DataStore) Set(key string, val string, ttl time.Duration, wg *sync.WaitGroup) (bool, error) {
 
-	var kv *KeyValuePair
-	for _, KV := range s.data {
-		if KV.key == key {
-			kv = &KV
-		}
-	}
+	data := Data{value: val, ttl: ttl}
+	s.data[key] = data
 
-	if kv == nil {
-		s.data = append(s.data, KeyValuePair{key: key, value: val, ttl: ttl})
+	go func() {
+		defer wg.Done()
+		fmt.Printf("sleeping now!\n")
+		time.Sleep(ttl * time.Second)
+		fmt.Printf("after sleep deleting now!\n")
+		s.Delete(key)
+	}()
 
-		go func() {
-			time.Sleep(ttl)
-			fmt.Printf("In sleep")
-		}()
-		return true, nil
-	}
-
-	kv.value = val
-	kv.ttl = ttl
 	return true, nil
 }
 
 func (s *DataStore) Delete(key string) (bool, error) {
-	for i, KV := range s.data {
-		if KV.key == key {
-			s.data = append(s.data[:i], s.data[i+1:]...)
-			return true, nil
-		}
+
+	_, exists := s.data[key]
+
+	if !exists {
+		return false, fmt.Errorf("not found")
 	}
 
-	return false, fmt.Errorf("key not found")
+	delete(s.data, key)
+	return true, nil
 }
 
 func main() {
-	ds := DataStore{data: []KeyValuePair{}}
+	ds := DataStore{data: make(map[string]Data)}
+	wg := &sync.WaitGroup{}
 
-	ds.Set("key1", "value1", 500)
+	wg.Add(1)
+	ds.Set("key1", "value1", 5, wg)
 
+	time.Sleep(3 * time.Second)
+	fmt.Printf("woke up 1 now!\n")
 	a, _ := ds.Get("key1")
+	fmt.Println(a)
+
+	time.Sleep(3 * time.Second)
+	fmt.Printf("woke up 2 now!\n")
+	a, err := ds.Get("key1")
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	fmt.Println(a)
 
-	// var ds DataStore = {data: []KeyValuePair}
+	wg.Wait()
 
 }
